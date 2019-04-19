@@ -12,7 +12,7 @@ from mlflow.utils.rest_utils import http_request_safe
 from mlflow.protos.service_pb2 import CreateExperiment, MlflowService, GetExperiment, \
     GetRun, SearchRuns, ListExperiments, GetMetricHistory, LogMetric, LogParam, SetTag, \
     UpdateRun, CreateRun, DeleteRun, RestoreRun, DeleteExperiment, RestoreExperiment, \
-    UpdateExperiment, LogBatch
+    UpdateExperiment, LogBatch, LogConfig
 
 from mlflow.protos import databricks_pb2
 
@@ -182,6 +182,16 @@ class RestStore(AbstractStore):
         req_body = message_to_json(LogParam(run_uuid=run_uuid, key=param.key, value=param.value))
         self._call_endpoint(LogParam, req_body)
 
+    def log_config(self, run_uuid, config):
+        """
+        Log a config for the specified run
+
+        :param run_uuid: String id for the run
+        :param config: Config instance to log
+        """
+        req_body = message_to_json(LogConfig(run_uuid=run_uuid, key=config.key, value=config.value))
+        self._call_endpoint(LogConfig, req_body)
+
     def set_tag(self, run_uuid, tag):
         """
         Set a tag for the specified run
@@ -236,10 +246,12 @@ class RestStore(AbstractStore):
         req_body = message_to_json(RestoreRun(run_id=run_id))
         self._call_endpoint(RestoreRun, req_body)
 
-    def log_batch(self, run_id, metrics, params, tags):
+    def log_batch(self, run_id, metrics, params, tags, configs=None):
         metric_protos = [metric.to_proto() for metric in metrics]
         param_protos = [param.to_proto() for param in params]
         tag_protos = [tag.to_proto() for tag in tags]
+        configs = configs or []
+        config_protos = [config.to_proto() for config in configs]
         req_body = message_to_json(
-            LogBatch(metrics=metric_protos, params=param_protos, tags=tag_protos, run_id=run_id))
+            LogBatch(metrics=metric_protos, params=param_protos, tags=tag_protos, run_id=run_id, configs=config_protos))
         self._call_endpoint(LogBatch, req_body)
