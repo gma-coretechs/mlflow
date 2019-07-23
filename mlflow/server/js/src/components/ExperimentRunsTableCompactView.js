@@ -1,7 +1,7 @@
 import React, { PureComponent } from 'react';
 import { connect } from 'react-redux';
 import PropTypes from 'prop-types';
-import { ExperimentViewUtil, PARAM_TYPE, METRIC_TYPE, CONFIG_TYPE } from './ExperimentViewUtil';
+import ExperimentViewUtil from "./ExperimentViewUtil";
 import { RunInfo } from '../sdk/MlflowMessages';
 import classNames from 'classnames';
 import { Dropdown, MenuItem } from 'react-bootstrap';
@@ -86,9 +86,6 @@ class ExperimentRunsTableCompactView extends PureComponent {
     paramKeyList: PropTypes.arrayOf(String).isRequired,
     metricKeyList: PropTypes.arrayOf(String).isRequired,
     metricRanges: PropTypes.object.isRequired,
-    // List of list of configs in all the visible runs
-    configsList: PropTypes.arrayOf(Array).isRequired,
-    configKeyList: PropTypes.arrayOf(String).isRequired,
     // Handler for adding a metric or parameter to the set of bagged columns. All bagged metrics
     // are displayed in a single column, while each unbagged metric has its own column. Similar
     // logic applies for params.
@@ -99,8 +96,6 @@ class ExperimentRunsTableCompactView extends PureComponent {
     unbaggedParams: PropTypes.arrayOf(String).isRequired,
     // Array of keys corresponding to unbagged metrics
     unbaggedMetrics: PropTypes.arrayOf(String).isRequired,
-    // Array of keys corresponding to unbagged configs
-    unbaggedConfigs: PropTypes.arrayOf(String).isRequired,
   };
 
 
@@ -122,13 +117,9 @@ class ExperimentRunsTableCompactView extends PureComponent {
       unbaggedMetrics,
       unbaggedParams,
       onRemoveBagged,
-      configKeyList,
-      configsList,
-      unbaggedConfigs,
     } = this.props;
     const paramsMap = ExperimentViewUtil.toParamsMap(paramsList[idx]);
     const metricsMap = ExperimentViewUtil.toMetricsMap(metricsList[idx]);
-    const configsMap = ExperimentViewUtil.toConfigsMap(configsList[idx]);
     const runInfo = runInfos[idx];
     const selected = runsSelected[runInfo.run_uuid] === true;
     const rowContents = [
@@ -142,13 +133,10 @@ class ExperimentRunsTableCompactView extends PureComponent {
 
     const unbaggedParamSet = new Set(unbaggedParams);
     const unbaggedMetricSet = new Set(unbaggedMetrics);
-    const unbaggedConfigSet = new Set(unbaggedConfigs);
     const baggedParams = paramKeyList.filter((paramKey) =>
       !unbaggedParamSet.has(paramKey) && paramsMap[paramKey] !== undefined);
     const baggedMetrics = metricKeyList.filter((metricKey) =>
       !unbaggedMetricSet.has(metricKey) && metricsMap[metricKey] !== undefined);
-    const baggedConfigs = configKeyList.filter((configKey) =>
-      !unbaggedConfigSet.has(configKey) && configsMap[configKey] !== undefined);
 
     // Add params (unbagged, then bagged)
     unbaggedParams.forEach((paramKey) => {
@@ -157,17 +145,18 @@ class ExperimentRunsTableCompactView extends PureComponent {
     // Add bagged params
     const paramsCellContents = baggedParams.map((paramKey) => {
       const keyname = "param-" + paramKey;
-      const sortIcon = ExperimentViewUtil.getSortIcon(sortState, PARAM_TYPE, paramKey);
+      const sortIcon = ExperimentViewUtil.getSortIcon(sortState, false, true, paramKey);
       return (<BaggedCell
         key={keyname}
         sortIcon={sortIcon}
         keyName={paramKey}
         value={paramsMap[paramKey].getValue()}
         setSortByHandler={setSortByHandler}
-        columnType={PARAM_TYPE}
+        isMetric={false}
+        isParam
         onRemoveBagged={onRemoveBagged}/>);
     });
-    if (this.shouldShowBaggedColumn(PARAM_TYPE)) {
+    if (this.shouldShowBaggedColumn(true)) {
       rowContents.push(
         <div key={"params-container-cell-" + runInfo.run_uuid}>
           {paramsCellContents}
@@ -183,18 +172,19 @@ class ExperimentRunsTableCompactView extends PureComponent {
     // Add bagged metrics
     const metricsCellContents = baggedMetrics.map((metricKey) => {
       const keyname = "metric-" + metricKey;
-      const sortIcon = ExperimentViewUtil.getSortIcon(sortState, METRIC_TYPE, metricKey);
+      const sortIcon = ExperimentViewUtil.getSortIcon(sortState, true, false, metricKey);
       return (
         <BaggedCell key={keyname}
                     keyName={metricKey}
                     value={metricsMap[metricKey].getValue().toString()}
                     sortIcon={sortIcon}
                     setSortByHandler={setSortByHandler}
-                    columnType={METRIC_TYPE}
+                    isMetric
+                    isParam={false}
                     onRemoveBagged={onRemoveBagged}/>
       );
     });
-    if (this.shouldShowBaggedColumn(METRIC_TYPE)) {
+    if (this.shouldShowBaggedColumn(false)) {
       rowContents.push(
         <div
           key={"metrics-container-cell-" + runInfo.run_uuid}
@@ -204,29 +194,6 @@ class ExperimentRunsTableCompactView extends PureComponent {
         </div>
       );
     }
-    // Add configs (unbagged, then bagged)
-    unbaggedConfigs.forEach((configKey) => {
-      rowContents.push(ExperimentViewUtil.getUnbaggedConfigCell(configKey, configsMap, "div"));
-    });
-    // Add bagged configs
-    const configsCellContents = baggedConfigs.map((configKey) => {
-      const keyname = "config-" + configKey;
-      const sortIcon = ExperimentViewUtil.getSortIcon(sortState, CONFIG_TYPE, configKey);
-      return (<BaggedCell
-        key={keyname}
-        sortIcon={sortIcon}
-        keyName={configKey}
-        value={configsMap[configKey].getValue()}
-        setSortByHandler={setSortByHandler}
-        columnType={CONFIG_TYPE}
-        onRemoveBagged={onRemoveBagged}/>);
-    });
-    if (this.shouldShowBaggedColumn(CONFIG_TYPE)) {
-      rowContents.push(
-        <div key={"params-container-cell-" + runInfo.run_uuid}>
-          {configsCellContents}
-        </div>);
-    }
     return {
       key: runInfo.run_uuid,
       contents: rowContents,
@@ -234,16 +201,16 @@ class ExperimentRunsTableCompactView extends PureComponent {
     };
   }
 
-  getSortInfo(type) {
+  getSortInfo(isMetric, isParam) {
     const { sortState, onSortBy } = this.props;
     const sortIcon = sortState.ascending ?
       <i className="fas fa-caret-up" style={styles.sortArrow}/> :
       <i className="fas fa-caret-down" style={styles.sortArrow}/>;
-    if (sortState.type === type) {
+    if (sortState.isMetric === isMetric && sortState.isParam === isParam) {
       return (
         <span
           style={styles.sortToggle}
-          onClick={() => onSortBy(type, sortState.key)}
+          onClick={() => onSortBy(isMetric, isParam, sortState.key)}
         >
         <span style={styles.sortKeyName} className="run-table-container">
           (sort: {sortState.key}
@@ -259,14 +226,12 @@ class ExperimentRunsTableCompactView extends PureComponent {
    * Returns true if our table should contain a column for displaying bagged params (if isParam is
    * truthy) or bagged metrics.
    */
-  shouldShowBaggedColumn(columnType) {
-    const { metricKeyList, paramKeyList, unbaggedMetrics, unbaggedParams, configKeyList, unbaggedConfigs } = this.props;
-    if (columnType === PARAM_TYPE) {
+  shouldShowBaggedColumn(isParam) {
+    const { metricKeyList, paramKeyList, unbaggedMetrics, unbaggedParams } = this.props;
+    if (isParam) {
       return unbaggedParams.length !== paramKeyList.length || paramKeyList.length === 0;
-    } else if(columnType === METRIC_TYPE){
-      return unbaggedMetrics.length !== metricKeyList.length || metricKeyList.length === 0;
     }
-    return unbaggedConfigs.length !== configKeyList.length || configKeyList.length === 0;
+    return unbaggedMetrics.length !== metricKeyList.length || metricKeyList.length === 0;
   }
 
   /**
@@ -282,14 +247,13 @@ class ExperimentRunsTableCompactView extends PureComponent {
       unbaggedMetrics,
       unbaggedParams,
       onAddBagged,
-      configKeyList,
-      unbaggedConfigs,
     } = this.props;
     const columns = [];
-    const getHeaderCell = (keyType, key, i) => {
-      const sortIcon = ExperimentViewUtil.getSortIcon(sortState, keyType, key);
+    const getHeaderCell = (isParam, key, i) => {
+      const isMetric = !isParam;
+      const sortIcon = ExperimentViewUtil.getSortIcon(sortState, isMetric, isParam, key);
       const className = classNames("bottom-row", { "left-border": i === 0 });
-      const elemKey = keyType + "-" + key;
+      const elemKey = (isParam ? "param-" : "metric-") + key;
       const keyContainerWidth = sortIcon ? "calc(100% - 20px)" : "100%";
       return (
         <div
@@ -315,19 +279,19 @@ class ExperimentRunsTableCompactView extends PureComponent {
               <Dropdown.Menu className="mlflow-menu">
                 <MenuItem
                   className="mlflow-menu-item"
-                  onClick={() => setSortByHandler(keyType, key, true)}
+                  onClick={() => setSortByHandler(!isParam, isParam, key, true)}
                 >
                   Sort ascending
                 </MenuItem>
                 <MenuItem
                   className="mlflow-menu-item"
-                  onClick={() => setSortByHandler(keyType, key, false)}
+                  onClick={() => setSortByHandler(!isParam, isParam, key, false)}
                 >
                   Sort descending
                 </MenuItem>
                 <MenuItem
                   className="mlflow-menu-item"
-                  onClick={() => onAddBagged(keyType, key)}
+                  onClick={() => onAddBagged(isParam, key)}
                 >
                   Collapse column
                 </MenuItem>
@@ -338,32 +302,21 @@ class ExperimentRunsTableCompactView extends PureComponent {
 
     const paramClassName = classNames("bottom-row", {"left-border": unbaggedParams.length === 0});
     const metricClassName = classNames("bottom-row", {"left-border": unbaggedMetrics.length === 0});
-    const configClassName = classNames("bottom-row", {"left-border": unbaggedConfigs.length === 0});
-
     unbaggedParams.forEach((paramKey, i) => {
-      columns.push(getHeaderCell(PARAM_TYPE, paramKey, i));
+      columns.push(getHeaderCell(true, paramKey, i));
     });
-    if (this.shouldShowBaggedColumn(PARAM_TYPE)) {
+
+    if (this.shouldShowBaggedColumn(true)) {
       columns.push(<div key="meta-bagged-params left-border" className={paramClassName}>
         {paramKeyList.length !== 0 ? "" : "(n/a)"}
       </div>);
     }
-
     unbaggedMetrics.forEach((metricKey, i) => {
-      columns.push(getHeaderCell(METRIC_TYPE, metricKey, i));
+      columns.push(getHeaderCell(false, metricKey, i));
     });
-    if (this.shouldShowBaggedColumn(METRIC_TYPE)) {
+    if (this.shouldShowBaggedColumn(false)) {
       columns.push(<div key="meta-bagged-metrics left-border" className={metricClassName}>
         {metricKeyList.length !== 0 ? "" : "(n/a)"}
-      </div>);
-    }
-
-    unbaggedConfigs.forEach((configKey, i) => {
-      columns.push(getHeaderCell(CONFIG_TYPE, configKey, i));
-    });
-    if (this.shouldShowBaggedColumn(CONFIG_TYPE)) {
-      columns.push(<div key="meta-bagged-params left-border" className={configClassName}>
-        {configKeyList.length !== 0 ? "" : "(n/a)"}
       </div>);
     }
     return columns;
@@ -379,7 +332,6 @@ class ExperimentRunsTableCompactView extends PureComponent {
   _lastRunsExpanded = this.props.runsExpanded;
   _lastUnbaggedMetrics = this.props.unbaggedMetrics;
   _lastUnbaggedParams = this.props.unbaggedParams;
-  _lastUnbaggedConfigs = this.props.unbaggedConfigs;
 
 
   render() {
@@ -395,8 +347,6 @@ class ExperimentRunsTableCompactView extends PureComponent {
       runsExpanded,
       unbaggedMetrics,
       unbaggedParams,
-      unbaggedConfigs,
-      configsList,
     } = this.props;
 
     const rows = ExperimentViewUtil.getRowRenderMetadata({
@@ -405,8 +355,7 @@ class ExperimentRunsTableCompactView extends PureComponent {
       tagsList,
       metricsList,
       paramsList,
-      runsExpanded,
-      configsList});
+      runsExpanded});
 
     const headerCells = [
       ExperimentViewUtil.getSelectAllCheckbox(onCheckAll, isAllChecked, "div"),
@@ -436,10 +385,6 @@ class ExperimentRunsTableCompactView extends PureComponent {
                 this._lastUnbaggedParams = unbaggedParams;
                 this._cache.clearAll();
               }
-              if (this._lastUnbaggedConfigs !== unbaggedConfigs) {
-                this._lastUnbaggedConfigs = unbaggedConfigs;
-                this._cache.clearAll();
-              }
               const runMetadataColWidths = [
                 30, // checkbox column width
                 20, // expander column width
@@ -449,17 +394,16 @@ class ExperimentRunsTableCompactView extends PureComponent {
                 100, // 'Source' column width
                 80, // 'Version' column width
               ];
-              const showBaggedParams = this.shouldShowBaggedColumn(PARAM_TYPE);
-              const showBaggedMetrics = this.shouldShowBaggedColumn(METRIC_TYPE);
-              const showBaggedConfigs = this.shouldShowBaggedColumn(CONFIG_TYPE);
+              const showBaggedParams = this.shouldShowBaggedColumn(true);
+              const showBaggedMetrics = this.shouldShowBaggedColumn(false);
               const runMetadataWidth = runMetadataColWidths.reduce((a, b) => a + b);
-              const tableMinWidth = (BAGGED_COL_WIDTH * (showBaggedParams + showBaggedMetrics + showBaggedConfigs))
+              const tableMinWidth = (BAGGED_COL_WIDTH * (showBaggedParams + showBaggedMetrics))
                 + runMetadataWidth +
-                (UNBAGGED_COL_WIDTH * (unbaggedMetrics.length + unbaggedParams.length + unbaggedConfigs.length));
+                (UNBAGGED_COL_WIDTH * (unbaggedMetrics.length + unbaggedParams.length));
               // If we aren't showing bagged metrics or params (bagged metrics & params are the
               // only cols that use the CellMeasurer component), set the row height statically
               const cellMeasurerProps = {};
-              if (showBaggedMetrics || showBaggedParams || showBaggedConfigs) {
+              if (showBaggedMetrics || showBaggedParams) {
                 cellMeasurerProps.rowHeight = this._cache.rowHeight;
                 cellMeasurerProps.deferredMeasurementCache = this._cache;
               } else {
@@ -581,49 +525,6 @@ class ExperimentRunsTableCompactView extends PureComponent {
                     return (<CellMeasurer
                       cache={this._cache}
                       columnIndex={0 + showBaggedParams}
-                      key={dataKey}
-                      parent={parent}
-                      rowIndex={rowIndex}>
-                      <div style={{...styles.baggedCellContainer, ...paddingOpt}}>
-                        {rowData.contents[colIdx]}
-                      </div>
-                    </CellMeasurer>);
-                  }}
-                />}
-                {unbaggedConfigs.map((unbaggedConfig, idx) => {
-                  const colIdx = NUM_RUN_METADATA_COLS + showBaggedParams + unbaggedParams.length
-                    + showBaggedMetrics + unbaggedMetrics.length + idx;
-                  return <Column
-                    key={"config-" + unbaggedConfig}
-                    dataKey={"config-" + unbaggedConfig}
-                    width={UNBAGGED_COL_WIDTH}
-                    headerRenderer={() => headerCells[colIdx]}
-                    style={styles.columnStyle}
-                    cellRenderer={({rowData}) => rowData.contents[colIdx]}
-                  />;
-                })}
-                {showBaggedConfigs && <Column
-                  width={BAGGED_COL_WIDTH}
-                  flexShrink={0}
-                  label='Configs'
-                  dataKey='configs'
-                  headerRenderer={() => {
-                    return <div
-                      style={{...styles.unbaggedMetricParamColHeader, leftBorder: BORDER_STYLE}}
-                    >
-                      Configs
-                    </div>;
-                  }}
-                  style={{...styles.columnStyle, borderLeft: BORDER_STYLE}}
-                  cellRenderer={({rowIndex, rowData, parent, dataKey}) => {
-                    // Add extra padding to last row so that we can render dropdowns for bagged
-                    // param key-value pairs in that row
-                    const colIdx = NUM_RUN_METADATA_COLS + showBaggedParams + unbaggedParams.length
-                     + showBaggedMetrics + unbaggedMetrics.length + unbaggedConfigs.length;
-                    const paddingOpt = rowIndex === rows.length - 1 ? {paddingBottom: 95} : {};
-                    return (<CellMeasurer
-                      cache={this._cache}
-                      columnIndex={0}
                       key={dataKey}
                       parent={parent}
                       rowIndex={rowIndex}>

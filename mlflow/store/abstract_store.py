@@ -176,15 +176,6 @@ class AbstractStore:
         """
         self.log_batch(run_uuid, metrics=[], params=[param], tags=[])
 
-    def log_config(self, run_uuid, config):
-        """
-        Log a config for the specified run
-
-        :param run_uuid: String id for the run
-        :param config: :py:class:`mlflow.entities.Config` instance to log
-        """
-        self.log_batch(run_uuid, metrics=[], params=[], tags=[], configs=[config])
-
     def set_tag(self, run_uuid, tag):
         """
         Set a tag for the specified run
@@ -237,7 +228,7 @@ class AbstractStore:
         return [run.info for run in runs]
 
     @abstractmethod
-    def log_batch(self, run_id, metrics, params, tags, configs=None):
+    def log_batch(self, run_id, metrics, params, tags):
         """
         Log multiple metrics, params, and tags for the specified run
 
@@ -245,7 +236,6 @@ class AbstractStore:
         :param metrics: List of :py:class:`mlflow.entities.Metric` instances to log
         :param params: List of :py:class:`mlflow.entities.Param` instances to log
         :param tags: List of :py:class:`mlflow.entities.RunTag` instances to log
-        :param configs: List of :py:class:`mlflow.entities.Config` instances to log
 
         :return: None.
         """

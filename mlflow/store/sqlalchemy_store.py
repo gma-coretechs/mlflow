@@ -6,7 +6,7 @@ from six.moves import urllib
 from mlflow.entities.lifecycle_stage import LifecycleStage
 from mlflow.store import SEARCH_MAX_RESULTS_THRESHOLD
 from mlflow.store.dbmodels.db_types import MYSQL
-from mlflow.store.dbmodels.models import Base, SqlExperiment, SqlRun, SqlMetric, SqlParam, SqlTag, SqlConfig
+from mlflow.store.dbmodels.models import Base, SqlExperiment, SqlRun, SqlMetric, SqlParam, SqlTag
 from mlflow.entities import RunStatus, SourceType, Experiment
 from mlflow.store.abstract_store import AbstractStore
 from mlflow.entities import ViewType
@@ -16,7 +16,7 @@ from mlflow.protos.databricks_pb2 import INVALID_PARAMETER_VALUE, RESOURCE_ALREA
 from mlflow.tracking.utils import _is_local_uri
 from mlflow.utils.file_utils import build_path, mkdir
 from mlflow.utils.mlflow_tags import MLFLOW_PARENT_RUN_ID, MLFLOW_RUN_NAME
-from mlflow.utils.validation import _validate_batch_log_limits, _validate_batch_log_data, \
+from mlflow.utils.validation import _validate_batch_log_limits, _validate_batch_log_data,\
     _validate_run_id
 
 
@@ -394,12 +394,6 @@ class SqlAlchemyStore(AbstractStore):
                 else:
                     raise
 
-    def log_config(self, run_uuid, config):
-        with self.ManagedSessionMaker() as session:
-            run = self._get_run(run_uuid=run_uuid, session=session)
-            self._check_run_is_active(run)
-            session.merge(SqlConfig(run_uuid=run_uuid, key=config.key, value=config.value))
-
     def set_tag(self, run_uuid, tag):
         with self.ManagedSessionMaker() as session:
             run = self._get_run(run_uuid=run_uuid, session=session)
@@ -428,7 +422,7 @@ class SqlAlchemyStore(AbstractStore):
         stages = set(LifecycleStage.view_type_to_stages(run_view_type))
         return [run for run in exp.runs if run.lifecycle_stage in stages]
 
-    def log_batch(self, run_id, metrics, params, tags, configs=None):
+    def log_batch(self, run_id, metrics, params, tags):
         _validate_run_id(run_id)
         _validate_batch_log_data(metrics, params, tags)
         _validate_batch_log_limits(metrics, params, tags)
@@ -442,9 +436,6 @@ class SqlAlchemyStore(AbstractStore):
                 self.log_metric(run_id, metric)
             for tag in tags:
                 self.set_tag(run_id, tag)
-            configs = configs or []
-            for config in configs:
-                self.log_config(run_id, config)
         except MlflowException as e:
             raise e
         except Exception as e:
