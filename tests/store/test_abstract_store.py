@@ -25,14 +25,13 @@ class AbstractStoreTestImpl(AbstractStore):
     def rename_experiment(self, experiment_id, new_name):
         raise NotImplementedError()
 
-    def get_run(self, run_uuid):
+    def get_run(self, run_id):
         raise NotImplementedError()
 
-    def update_run_info(self, run_uuid, run_status, end_time):
+    def update_run_info(self, run_id, run_status, end_time):
         raise NotImplementedError()
 
-    def create_run(self, experiment_id, user_id, run_name, source_type, source_name,
-                   entry_point_name, start_time, source_version, tags, parent_run_id):
+    def create_run(self, experiment_id, user_id, start_time, tags):
         raise NotImplementedError()
 
     def delete_run(self, run_id):
@@ -41,11 +40,11 @@ class AbstractStoreTestImpl(AbstractStore):
     def restore_run(self, run_id):
         raise NotImplementedError()
 
-    def get_metric_history(self, run_uuid, metric_key):
+    def get_metric_history(self, run_id, metric_key):
         raise NotImplementedError()
 
-    def search_runs(self, experiment_ids, search_filter, run_view_type,
-                    max_results=SEARCH_MAX_RESULTS_DEFAULT):
+    def _search_runs(self, experiment_ids, filter_string, run_view_type, max_results, order_by,
+                     page_token):
         raise NotImplementedError()
 
     def log_batch(self, run_id, metrics, params, tags):
@@ -115,3 +114,19 @@ def test_list_run_infos():
         store = AbstractStoreTestImpl()
         assert store.list_run_infos(experiment_id, view_type) == run_infos
         store.search_runs.assert_called_once_with([experiment_id], None, view_type)
+
+
+def test_search_runs():
+    experiment_id = mock.Mock()
+    view_type = mock.Mock()
+    runs = [mock.Mock(), mock.Mock()]
+    token = "adfoiweroh12334kj129318934u"
+
+    with mock.patch.object(AbstractStoreTestImpl, "_search_runs", return_value=(runs, token)):
+        store = AbstractStoreTestImpl()
+        result = store.search_runs([experiment_id], None, view_type)
+        for i in range(len(result)):
+            assert result[i] == runs[i]
+        assert result.token == token
+        store._search_runs.assert_called_once_with([experiment_id], None, view_type,
+                                                   SEARCH_MAX_RESULTS_DEFAULT, None, None)
